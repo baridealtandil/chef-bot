@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI, FunctionDeclaration, Type } from '@google/generative-ai';
+import { GoogleGenerativeAI, FunctionDeclaration, SchemaType, Content } from '@google/generative-ai';
 import { buscarPlatosDb, obtenerCategoriasDb, obtenerHistorialDb, guardarMensajeDb } from '../db/queries.js';
 import dotenv from 'dotenv';
 
@@ -17,19 +17,19 @@ const buscarPlatosDeclaration: FunctionDeclaration = {
   name: 'buscar_platos',
   description: 'Busca platos en el catálogo del restaurante especificado (la_vereda o bar_ideal). Permite filtrar por un término de búsqueda (ej. \'pollo\') o por categoría.',
   parameters: {
-    type: Type.OBJECT,
+    type: SchemaType.OBJECT,
     properties: {
       establecimiento: {
-        type: Type.STRING,
+        type: SchemaType.STRING,
         enum: ['la_vereda', 'bar_ideal'],
         description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
       },
       query: {
-        type: Type.STRING,
+        type: SchemaType.STRING,
         description: 'Término de búsqueda para filtrar platos (ej: "bondiola", "pasta", "milanesa"). Opcional.',
       },
       categoria: {
-        type: Type.STRING,
+        type: SchemaType.STRING,
         description: 'Categoría específica de platos (ej: "pastas", "carnes", "postres", "entradas_sugerencias"). Opcional.',
       }
     },
@@ -41,10 +41,10 @@ const obtenerCategoriasDeclaration: FunctionDeclaration = {
   name: 'obtener_categorias',
   description: 'Obtiene el listado de categorías únicas de platos disponibles en un establecimiento.',
   parameters: {
-    type: Type.OBJECT,
+    type: SchemaType.OBJECT,
     properties: {
       establecimiento: {
-        type: Type.STRING,
+        type: SchemaType.STRING,
         enum: ['la_vereda', 'bar_ideal'],
         description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
       }
@@ -82,7 +82,7 @@ export async function procesarMensajeChef(chatId: number, mensajeTexto: string):
   const historial = await obtenerHistorialDb(chatId, 15);
 
   // 3. Formatear historial al formato de Gemini
-  const contents = historial.map(msg => ({
+  const contents: Content[] = historial.map(msg => ({
     role: msg.rol === 'user' ? 'user' : 'model',
     parts: [{ text: msg.contenido }],
   }));
@@ -106,13 +106,13 @@ export async function procesarMensajeChef(chatId: number, mensajeTexto: string):
   });
 
   // 5. Enviar mensaje a Gemini
-  let response = await model.generateContent({
+  let result = await model.generateContent({
     contents,
     tools: [{ functionDeclarations: [buscarPlatosDeclaration, obtenerCategoriasDeclaration] }],
   });
 
   // 6. Ciclo de resolución de herramientas (Function Calling)
-  let functionCalls = response.functionCalls;
+  let functionCalls = result.response.functionCalls();
   while (functionCalls && functionCalls.length > 0) {
     const toolResults: any[] = [];
 
@@ -145,7 +145,7 @@ export async function procesarMensajeChef(chatId: number, mensajeTexto: string):
     }
 
     // Agregar el mensaje de llamada de función e historial al chat
-    contents.push(response.candidates?.[0]?.content || {
+    contents.push(result.response.candidates?.[0]?.content || {
       role: 'model',
       parts: [{ functionCall: functionCalls[0] }] // Ajuste si hay llamadas
     });
@@ -157,15 +157,15 @@ export async function procesarMensajeChef(chatId: number, mensajeTexto: string):
     });
 
     // Volver a llamar al modelo con las respuestas de las funciones
-    response = await model.generateContent({
+    result = await model.generateContent({
       contents,
       tools: [{ functionDeclarations: [buscarPlatosDeclaration, obtenerCategoriasDeclaration] }],
     });
 
-    functionCalls = response.functionCalls;
+    functionCalls = result.response.functionCalls();
   }
 
-  const respuestaFinal = response.text || 'No pude procesar una respuesta.';
+  const respuestaFinal = result.response.text() || 'No pude procesar una respuesta.';
 
   // 7. Guardar la respuesta final de la IA en la base de datos
   await guardarMensajeDb(chatId, 'model', respuestaFinal);
