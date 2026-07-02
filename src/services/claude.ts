@@ -49,7 +49,7 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
   ];
 
   let response = await client.messages.create({
-    model: 'claude-3-5-sonnet-latest',
+    model: 'claude-3-haiku-20240307',
     max_tokens: 1024,
     system: SYSTEM_PROMPT,
     tools,
@@ -81,7 +81,7 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
     messages.push({ role: 'assistant' as const, content: response.content });
     messages.push({ role: 'user' as const, content: toolResults });
     response = await client.messages.create({
-      model: 'claude-3-5-sonnet-latest',
+      model: 'claude-3-haiku-20240307',
       max_tokens: 1024,
       system: SYSTEM_PROMPT,
       tools,

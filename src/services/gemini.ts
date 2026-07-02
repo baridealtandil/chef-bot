@@ -10,7 +10,7 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
-const modelName = process.env.GEMINI_MODEL || 'gemini-1.5-flash'; // gemini-1.5-flash es rápido, económico y excelente para function calling
+const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash'; // gemini-2.5-flash es el modelo por defecto en 2026
 
 // Definición de las funciones disponibles para la IA
 const buscarPlatosDeclaration: FunctionDeclaration = {
@@ -21,6 +21,7 @@ const buscarPlatosDeclaration: FunctionDeclaration = {
     properties: {
       establecimiento: {
         type: SchemaType.STRING,
+        format: 'enum',
         enum: ['la_vereda', 'bar_ideal'],
         description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
       },
@@ -45,6 +46,7 @@ const obtenerCategoriasDeclaration: FunctionDeclaration = {
     properties: {
       establecimiento: {
         type: SchemaType.STRING,
+        format: 'enum',
         enum: ['la_vereda', 'bar_ideal'],
         description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
       }
