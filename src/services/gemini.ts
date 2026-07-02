@@ -10,7 +10,7 @@ if (!apiKey) {
 }
 
 const genAI = new GoogleGenerativeAI(apiKey || '');
-const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash'; // gemini-2.5-flash es el modelo por defecto en 2026
+const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-pro'; // gemini-2.5-pro es estable, robusto y evita sobrecarga de servidores
 
 // Definición de las funciones disponibles para la IA
 const buscarPlatosDeclaration: FunctionDeclaration = {
