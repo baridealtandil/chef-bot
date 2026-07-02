@@ -18,6 +18,7 @@ app.get('/debug', (c) => {
     databaseUrl: process.env.DATABASE_URL ? 'defined' : 'undefined',
     port: process.env.PORT,
     nodeEnv: process.env.NODE_ENV,
+    envKeys: Object.keys(process.env),
   });
 });
 
