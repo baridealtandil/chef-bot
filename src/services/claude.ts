@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorialDb } from '../db/queries.js';
+import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorialDb, agregarPlatoDb } from '../db/queries.js';
 
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
@@ -52,6 +52,34 @@ const tools: Anthropic.Tool[] = [
       required: ['establecimiento'],
     },
   },
+  {
+    name: 'agregar_plato',
+    description:
+      'Guarda un plato NUEVO de forma permanente en el catálogo del establecimiento. Usar SOLO cuando el chef pide explícitamente agregar, cargar, sumar o guardar un plato al catálogo (ej: "agregá este plato a La Vereda", "cargá esta receta nueva al Ideal"). NUNCA usar esta herramienta cuando el chef solo pide una idea o sugerencia de plato nuevo sin pedir que se guarde.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        establecimiento: {
+          type: 'string',
+          enum: ['la_vereda', 'bar_ideal'],
+          description: 'El restaurante al que pertenece el plato nuevo. Obligatorio.',
+        },
+        nombre: {
+          type: 'string',
+          description: 'Nombre completo del plato, incluyendo guarnición si corresponde (ej: "Bondiola a la mostaza con puré de batatas"). Obligatorio.',
+        },
+        categoria: {
+          type: 'string',
+          description: 'Categoría del plato (ej: "carnes", "pastas", "vegetarianos", "postres", "entradas"). Obligatorio.',
+        },
+        descripcion: {
+          type: 'string',
+          description: 'Descripción u observaciones adicionales del plato. Opcional.',
+        },
+      },
+      required: ['establecimiento', 'nombre', 'categoria'],
+    },
+  },
 ];
 
 const SYSTEM_PROMPT = `Sos un Asistente Gastronómico de IA, el copiloto de cocina del Chef Gabriel para sus dos restaurantes en Tandil, Argentina: "La Vereda" y "Bar Ideal".
@@ -68,6 +96,7 @@ Los catálogos de platos de ambos restaurantes están en la misma base de datos 
 - **Proponer menús semanales o sugerencias diarias**: basate en los platos reales del catálogo histórico de ese local.
 - **Consejos de preparación, producción e indicaciones al personal de cocina**: dalos con criterio profesional de cocina.
 - **Sugerir platos NUEVOS (fuera del catálogo)**: si el chef pide una idea de plato que no está en la base, generala de forma creativa PERO respetando fielmente el perfil gastronómico del restaurante consultado. Confirmá primero con buscar_platos que no exista ya algo similar. Aclará brevemente que es una propuesta nueva (no un plato del catálogo actual). Si el chef da restricciones puntuales (ingredientes de stock, temporada, costo), incorporalas — pero no las apliques si no las pidió.
+- **Agregar un plato al catálogo de forma permanente**: solo cuando el chef lo pide explícitamente ("agregá esto", "cargá este plato", "sumalo al catálogo", "guardalo"), usá la herramienta agregar_plato. No la uses nunca solo porque el chef pidió una idea o sugerencia — la sugerencia y la carga al catálogo son dos acciones distintas, y la carga siempre requiere pedido explícito. Después de agregar un plato, confirmá en una línea corta que quedó guardado (o avisá si ya existía, sin repetir toda la ficha del plato).
 
 ### Interpretación de pedidos con reglas numéricas (CRÍTICO)
 Cuando el chef pida un menú con cantidades específicas por categoría (ej: "2 pastas, 2 carnes, 2 vegetarianos"), esas cantidades aplican a CADA día del período pedido, no se reparten una categoría distinta por día. Ejemplo: "menú semanal con 2 pastas, 2 carnes, 2 vegetarianos por día" significa que CADA día de la semana debe tener las 6 categorías juntas (2+2+2), y ningún plato se puede repetir en toda la semana completa. Antes de responder, releé el pedido del chef y verificá que tu respuesta cumpla EXACTAMENTE las cantidades y reglas pedidas — si pidió 6 platos por día, cada día de tu respuesta tiene que tener 6 platos, no 1.
@@ -148,6 +177,13 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
           );
         } else if (name === 'obtener_categorias') {
           resultData = await obtenerCategoriasDb(args.establecimiento as 'la_vereda' | 'bar_ideal');
+        } else if (name === 'agregar_plato') {
+          resultData = await agregarPlatoDb(
+            args.establecimiento as 'la_vereda' | 'bar_ideal',
+            args.nombre,
+            args.categoria,
+            args.descripcion
+          );
         } else {
           resultData = { error: `Herramienta ${name} no soportada.` };
         }
