@@ -10,6 +10,17 @@ const app = new Hono();
 // Ruta de healthcheck
 app.get('/', (c) => c.text('Chef Bot (Bar Ideal + La Vereda) API is active.'));
 
+// Ruta de depuración para variables de entorno
+app.get('/debug', (c) => {
+  return c.json({
+    telegramToken: process.env.TELEGRAM_BOT_TOKEN ? 'defined' : 'undefined',
+    geminiApiKey: process.env.GEMINI_API_KEY ? 'defined' : 'undefined',
+    databaseUrl: process.env.DATABASE_URL ? 'defined' : 'undefined',
+    port: process.env.PORT,
+    nodeEnv: process.env.NODE_ENV,
+  });
+});
+
 // Ruta del webhook de Telegram
 app.post('/webhook', async (c) => {
   try {
