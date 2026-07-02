@@ -11,6 +11,7 @@
     "seed": "node --import tsx src/db/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
     "@google/generative-ai": "^0.21.0",
     "@hono/node-server": "^1.13.7",
     "dotenv": "^16.4.7",

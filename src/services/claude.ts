@@ -1,173 +1,96 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { buscarPlatosDb, obtenerCategoriasDb, obtenerHistorialDb, guardarMensajeDb } from '../db/queries.js';
-import dotenv from 'dotenv';
+import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorialDb } from '../db/queries.js';
 
-dotenv.config();
-
-const apiKey = process.env.ANTHROPIC_API_KEY;
-if (!apiKey) {
-  console.warn('Advertencia: ANTHROPIC_API_KEY no está configurada.');
+const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+if (!anthropicApiKey) {
+  console.error('Error: ANTHROPIC_API_KEY no está configurada.');
 }
+const client = new Anthropic({ apiKey: anthropicApiKey });
 
-// Inicializar cliente de Anthropic
-const anthropic = new Anthropic({
-  apiKey: apiKey || '',
-});
-
-// Definición de las herramientas para Claude (formato Anthropic Tool Schema)
-const tools: any[] = [
+const tools: Anthropic.Tool[] = [
   {
     name: 'buscar_platos',
-    description: 'Busca platos en el catálogo del restaurante especificado (la_vereda o bar_ideal). Permite filtrar por un término de búsqueda (ej. \'pollo\') o por categoría.',
+    description: 'Busca platos en el menú de un restaurante.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
-        },
-        query: {
-          type: 'string',
-          description: 'Término de búsqueda para filtrar platos (ej: "bondiola", "pasta", "milanesa"). Opcional.',
-        },
-        categoria: {
-          type: 'string',
-          description: 'Categoría específica de platos (ej: "pastas", "carnes", "postres", "entradas_sugerencias"). Opcional.',
-        }
+        establecimiento: { type: 'string', enum: ['la_vereda', 'bar_ideal'], description: 'El restaurante.' },
+        query: { type: 'string', description: 'Texto libre para buscar.' },
+        categoria: { type: 'string', description: 'Categoría del plato.' }
       },
-      required: ['establecimiento'],
-    },
+      required: ['establecimiento']
+    }
   },
   {
     name: 'obtener_categorias',
-    description: 'Obtiene el listado de categorías únicas de platos disponibles en un establecimiento.',
+    description: 'Obtiene categorías de platos disponibles.',
     input_schema: {
-      type: 'object',
+      type: 'object' as const,
       properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
-        }
+        establecimiento: { type: 'string', enum: ['la_vereda', 'bar_ideal'], description: 'El restaurante.' }
       },
-      required: ['establecimiento'],
-    },
+      required: ['establecimiento']
+    }
   }
 ];
 
-// Prompt del sistema con las directrices del chef y perfiles gastronómicos
-const SYSTEM_PROMPT = `
-Eres un Asistente Gastronómico de IA experto y el partner de cocina del Chef Gabriel para sus dos restaurantes en Tandil, Argentina: "La Vereda" y "Bar Ideal".
+const SYSTEM_PROMPT = `Eres un Asistente Gastronómico de IA experto y el partner de cocina del Chef Gabriel para sus dos restaurantes en Tandil, Argentina: "La Vereda" y "Bar Ideal". Siempre consulta la base de datos antes de responder sobre platos o menús. Nunca inventes platos.`;
 
-### Regla de Oro
-Los catálogos de platos de ambos restaurantes están en la misma base de datos pero pertenecen a establecimientos diferentes. Debes tratarlos siempre por separado. NUNCA mezcles platos de "La Vereda" con platos de "Bar Ideal" en tus respuestas ni sugerencias a menos que el chef lo pida de forma explícita.
+export async function procesarMensajeChef(chatId: number, textoUsuario: string): Promise<string> {
+  const historialDb = await obtenerHistorialDb(chatId, 10);
+  await guardarMensajeDb(chatId, 'user', textoUsuario);
+  
+  const messages: Anthropic.MessageParam[] = [
+    ...historialDb.map((h: { rol: string; contenido: string }) => ({
+      role: h.rol === 'user' ? 'user' as const : 'assistant' as const,
+      content: h.contenido
+    })),
+    { role: 'user' as const, content: textoUsuario }
+  ];
 
-### Perfiles Gastronómicos para sugerencias creativas:
-1. **La Vereda**: Su identidad está marcada en salsas cremosas (roquefort, 4 quesos, panceta y puerro), pastas caseras rellenas, y guarniciones tipo puré, papas a la provenzal o papas españolas. Su menú fijo diario tiene una estructura rígida de Carne / Pasta / Vegetariano.
-2. **Bar Ideal**: Es un restaurante histórico, con perfil de carta y sugerencias más elaboradas. Entradas más finas (langostinos, gambas, croquetas variadas) y principales con técnicas más trabajadas (grillado, ratatouille, reducciones, etc.).
-
-### Tareas en las que asistes (Fase 1):
-- Consultar platos existentes: Usa las herramientas provistas para buscar platos o categorías.
-- Proponer menús semanales o sugerencias diarias: Utiliza solo los platos que existen en el catálogo histórico de ese local.
-- Sugerir platos nuevos: Si el chef te pide una propuesta de plato que no está en la base de datos, génerala de forma creativa PERO respetando fielmente el perfil gastronómico del restaurante consultado. Si el chef te da restricciones (como ingredientes de temporada, stock o costos), incorpóralas.
-
-### Estilo de comunicación:
-Sé profesional, conciso, habla en español rioplatense (de Argentina: usá "che", "mirá", voseo "tenés", "hacé") acorde al ámbito de cocina. No uses explicaciones innecesarias ni introducciones excesivamente formales. Al grano, como se habla en una cocina activa.
-`;
-
-export async function procesarMensajeChef(chatId: number, mensajeTexto: string): Promise<string> {
-  // 1. Guardar mensaje del usuario en la base de datos
-  await guardarMensajeDb(chatId, 'user', mensajeTexto);
-
-  // 2. Obtener historial reciente para contexto
-  const historial = await obtenerHistorialDb(chatId, 15);
-
-  // 3. Formatear historial al formato de Claude (alternando user/assistant)
-  const messages: any[] = historial.map(msg => ({
-    role: msg.rol === 'user' ? 'user' : 'assistant',
-    content: msg.contenido,
-  }));
-
-  // Asegurar que el último mensaje (el actual) está al final si no está ya
-  const ultimoMensaje = messages[messages.length - 1];
-  if (!ultimoMensaje || ultimoMensaje.content !== mensajeTexto) {
-    messages.push({
-      role: 'user',
-      content: mensajeTexto,
-    });
-  }
-
-  // 4. Enviar mensaje a Claude
-  let response = await anthropic.messages.create({
+  let response = await client.messages.create({
     model: 'claude-3-5-sonnet-latest',
-    max_tokens: 1500,
+    max_tokens: 1024,
     system: SYSTEM_PROMPT,
-    messages,
     tools,
+    messages
   });
 
-  // 5. Ciclo de resolución de herramientas (Tool Use)
   while (response.stop_reason === 'tool_use') {
-    // Agregar la llamada de la herramienta hecha por Claude a los mensajes de la conversación
-    messages.push({
-      role: 'assistant',
-      content: response.content,
-    });
+    const toolUseBlocks = response.content.filter((block): block is Anthropic.ToolUseBlock => block.type === 'tool_use');
+    const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-    const toolResults: any[] = [];
-    const toolUses = response.content.filter(block => block.type === 'tool_use');
-
-    for (const toolUse of toolUses) {
-      if (toolUse.type !== 'tool_use') continue;
-      const { name, input, id } = toolUse;
-      console.log(`[Claude ToolCall] Ejecutando tool: ${name} con argumentos:`, input);
-
-      let resultData: any;
+    for (const toolUse of toolUseBlocks) {
+      const { name, id, input } = toolUse;
+      const args = input as Record<string, string>;
+      let resultData: unknown;
       try {
         if (name === 'buscar_platos') {
-          const { establecimiento, query, categoria } = input as any;
-          resultData = await buscarPlatosDb(establecimiento, query, categoria);
+          resultData = await buscarPlatosDb(args.establecimiento as 'la_vereda' | 'bar_ideal', args.query, args.categoria);
         } else if (name === 'obtener_categorias') {
-          const { establecimiento } = input as any;
-          resultData = await obtenerCategoriasDb(establecimiento);
+          resultData = await obtenerCategoriasDb(args.establecimiento as 'la_vereda' | 'bar_ideal');
         } else {
           resultData = { error: `Herramienta ${name} no soportada.` };
         }
-      } catch (err: any) {
-        console.error(`Error ejecutando tool ${name}:`, err);
-        resultData = { error: err.message || 'Error interno de base de datos.' };
+      } catch (err: unknown) {
+        resultData = { error: err instanceof Error ? err.message : 'Error interno.' };
       }
-
-      toolResults.push({
-        type: 'tool_result',
-        tool_use_id: id,
-        content: JSON.stringify(resultData),
-      });
+      toolResults.push({ type: 'tool_result', tool_use_id: id, content: JSON.stringify(resultData) });
     }
 
-    // Agregar las respuestas de las herramientas
-    messages.push({
-      role: 'user',
-      content: toolResults,
-    });
-
-    // Llamar a Claude nuevamente con los resultados
-    response = await anthropic.messages.create({
+    messages.push({ role: 'assistant' as const, content: response.content });
+    messages.push({ role: 'user' as const, content: toolResults });
+    response = await client.messages.create({
       model: 'claude-3-5-sonnet-latest',
-      max_tokens: 1500,
+      max_tokens: 1024,
       system: SYSTEM_PROMPT,
-      messages,
       tools,
+      messages
     });
   }
 
-  // Extraer respuesta de texto final
-  const textBlock = response.content.find(block => block.type === 'text');
-  const respuestaFinal = textBlock && textBlock.type === 'text' ? textBlock.text : 'No pude procesar una respuesta.';
-
-  // 6. Guardar la respuesta final de la IA en la base de datos
+  const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
+  const respuestaFinal = textBlock?.text || 'No pude procesar una respuesta.';
   await guardarMensajeDb(chatId, 'model', respuestaFinal);
-
   return respuestaFinal;
 }
