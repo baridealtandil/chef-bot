@@ -26,13 +26,11 @@ app.get('/debug', (c) => {
 app.post('/webhook', async (c) => {
   try {
     const body = await c.req.json();
-    // Procesar actualización de forma asíncrona para no bloquear el webhook de Telegram (timeout de 10s)
-    procesarWebhookTelegram(body).catch((err) => {
-      console.error('Error asíncrono procesando webhook:', err);
-    });
+    // Esperar a que el procesamiento termine antes de responder, para que Railway no congele el contenedor
+    await procesarWebhookTelegram(body);
     return c.json({ ok: true });
   } catch (error: any) {
-    console.error('Error parseando json en webhook:', error);
+    console.error('Error procesando webhook:', error);
     return c.json({ error: error.message || 'Invalid JSON' }, 400);
   }
 });
