@@ -1,0 +1,25 @@
+{
+  "name": "chef-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot for Chef (Bar Ideal & La Vereda) using Gemini AI",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "node --import tsx --watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "seed": "node --import tsx src/db/seed.ts"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@hono/node-server": "^1.13.7",
+    "dotenv": "^16.4.7",
+    "hono": "^4.6.14",
+    "postgres": "^3.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
