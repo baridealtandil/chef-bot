@@ -15,8 +15,10 @@ async function test() {
     console.log('\n--- Respuesta recibida de Gemini ---');
     console.log(respuesta);
     console.log('------------------------------------');
+    process.exit(0);
   } catch (error) {
     console.error('\n❌ ERROR DETECTADO:', error);
+    process.exit(1);
   }
 }
 

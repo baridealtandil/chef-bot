@@ -102,7 +102,7 @@ export async function procesarMensajeChef(chatId: number, mensajeTexto: string):
     model: modelName,
     systemInstruction: SYSTEM_PROMPT,
   }, {
-    apiVersion: 'v1beta' // Requerido para function calling estable
+    apiVersion: 'v1beta'
   });
 
   // 5. Enviar mensaje a Gemini
