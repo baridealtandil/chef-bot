@@ -1,13 +1,9 @@
 import postgres from 'postgres';
 import dotenv from 'dotenv';
-
 dotenv.config();
-
 const databaseUrl = process.env.DATABASE_URL;
-
 // Inicializar la conexión de forma perezosa
 let sql: postgres.Sql;
-
 function getSql() {
   if (!sql) {
     if (!databaseUrl) {
@@ -17,7 +13,6 @@ function getSql() {
   }
   return sql;
 }
-
 export interface Plato {
   id: string;
   nombre: string;
@@ -27,7 +22,6 @@ export interface Plato {
   plato_compartido: boolean;
   created_at: Date;
 }
-
 export interface Mensaje {
   id: string;
   chat_id: number;
@@ -35,58 +29,82 @@ export interface Mensaje {
   contenido: string;
   created_at: Date;
 }
-
-// Buscar platos con filtros opcionales de texto y categoría
 export async function buscarPlatosDb(
   establecimiento: 'la_vereda' | 'bar_ideal',
   query?: string,
   categoria?: string
 ): Promise<Plato[]> {
   const db = getSql();
-  
+
   if (query && categoria) {
     return await db<Plato[]>`
-      SELECT * FROM platos 
-      WHERE establecimiento = ${establecimiento} 
+      SELECT * FROM platos
+      WHERE establecimiento = ${establecimiento}
         AND categoria = ${categoria}
         AND nombre ILIKE ${'%' + query + '%'}
       ORDER BY nombre ASC
     `;
   } else if (query) {
     return await db<Plato[]>`
-      SELECT * FROM platos 
-      WHERE establecimiento = ${establecimiento} 
+      SELECT * FROM platos
+      WHERE establecimiento = ${establecimiento}
         AND nombre ILIKE ${'%' + query + '%'}
       ORDER BY nombre ASC
     `;
   } else if (categoria) {
     return await db<Plato[]>`
-      SELECT * FROM platos 
-      WHERE establecimiento = ${establecimiento} 
+      SELECT * FROM platos
+      WHERE establecimiento = ${establecimiento}
         AND categoria = ${categoria}
       ORDER BY nombre ASC
     `;
   } else {
     return await db<Plato[]>`
-      SELECT * FROM platos 
-      WHERE establecimiento = ${establecimiento} 
+      SELECT * FROM platos
+      WHERE establecimiento = ${establecimiento}
       ORDER BY nombre ASC
     `;
   }
 }
-
-// Obtener todas las categorías únicas del establecimiento
 export async function obtenerCategoriasDb(establecimiento: 'la_vereda' | 'bar_ideal'): Promise<string[]> {
   const db = getSql();
   const rows = await db`
-    SELECT DISTINCT categoria FROM platos 
+    SELECT DISTINCT categoria FROM platos
     WHERE establecimiento = ${establecimiento}
     ORDER BY categoria ASC
   `;
   return rows.map(r => r.categoria);
 }
+export async function agregarPlatoDb(
+  establecimiento: 'la_vereda' | 'bar_ideal',
+  nombre: string,
+  categoria: string,
+  descripcion?: string
+): Promise<{ creado: boolean; plato?: Plato; motivo?: string }> {
+  const db = getSql();
 
-// Guardar un mensaje en el historial de conversación
+  const existentes = await db<Plato[]>`
+    SELECT * FROM platos
+    WHERE establecimiento = ${establecimiento}
+      AND LOWER(nombre) = LOWER(${nombre})
+  `;
+
+  if (existentes.length > 0) {
+    return {
+      creado: false,
+      motivo: 'Ya existe un plato con ese nombre en este establecimiento.',
+      plato: existentes[0],
+    };
+  }
+
+  const [nuevo] = await db<Plato[]>`
+    INSERT INTO platos (establecimiento, nombre, categoria, descripcion)
+    VALUES (${establecimiento}, ${nombre}, ${categoria}, ${descripcion ?? null})
+    RETURNING *
+  `;
+
+  return { creado: true, plato: nuevo };
+}
 export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', contenido: string): Promise<void> {
   const db = getSql();
   await db`
@@ -94,15 +112,13 @@ export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', co
     VALUES (${chatId}, ${rol}, ${contenido})
   `;
 }
-
-// Obtener historial de conversación para contexto de IA
 export async function obtenerHistorialDb(chatId: number, limit = 20): Promise<Mensaje[]> {
   const db = getSql();
   return await db<Mensaje[]>`
-    SELECT rol, contenido 
-    FROM conversaciones 
-    WHERE chat_id = ${chatId} 
-    ORDER BY created_at ASC 
+    SELECT rol, contenido
+    FROM conversaciones
+    WHERE chat_id = ${chatId}
+    ORDER BY created_at ASC
     LIMIT ${limit}
   `;
 }
