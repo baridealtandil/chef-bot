@@ -6,6 +6,9 @@ dotenv.config();
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const telegramApiUrl = `https://api.telegram.org/bot${token}`;
 
+const LIMITE_TELEGRAM = 4096;
+const AVISO_RECORTE = '\n\n(Respuesta recortada por límite de Telegram — pedime que siga si falta algo)';
+
 async function enviarChatAction(chatId: number): Promise<void> {
   try {
     await fetch(`${telegramApiUrl}/sendChatAction`, {
@@ -18,11 +21,29 @@ async function enviarChatAction(chatId: number): Promise<void> {
   }
 }
 
+// Red de seguridad: el prompt de Claude ya está instruido para no superar
+// ~3500 caracteres, así que esto solo debería activarse en casos excepcionales.
+// SIEMPRE se envía un único mensaje: si no entra, se recorta con aviso.
+function ajustarAlLimite(texto: string): string {
+  if (texto.length <= LIMITE_TELEGRAM) return texto;
+
+  console.warn(`[Telegram] Respuesta de ${texto.length} caracteres supera el límite, se recorta.`);
+
+  const limiteConAviso = LIMITE_TELEGRAM - AVISO_RECORTE.length;
+  let corte = texto.lastIndexOf('\n\n', limiteConAviso);
+  if (corte === -1) corte = texto.lastIndexOf('\n', limiteConAviso);
+  if (corte === -1) corte = limiteConAviso;
+
+  return texto.slice(0, corte).trim() + AVISO_RECORTE;
+}
+
 export async function enviarMensajeTelegram(chatId: number, texto: string): Promise<boolean> {
   if (!token) {
     console.error('Error: TELEGRAM_BOT_TOKEN no configurado.');
     return false;
   }
+
+  const textoFinal = ajustarAlLimite(texto);
 
   try {
     const res = await fetch(`${telegramApiUrl}/sendMessage`, {
@@ -30,7 +51,7 @@ export async function enviarMensajeTelegram(chatId: number, texto: string): Prom
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
-        text: texto,
+        text: textoFinal,
         parse_mode: 'Markdown',
       }),
     });
@@ -39,12 +60,10 @@ export async function enviarMensajeTelegram(chatId: number, texto: string): Prom
       const errorJson = await res.json();
       console.error('Error al enviar mensaje a Telegram con Markdown, reintentando sin formato:', errorJson);
 
-      // Fallback: reintentar como texto plano por si el Markdown de la respuesta
-      // rompe el parser de Telegram (ej. asteriscos o guiones bajos sueltos).
       const resPlano = await fetch(`${telegramApiUrl}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: texto }),
+        body: JSON.stringify({ chat_id: chatId, text: textoFinal }),
       });
 
       if (!resPlano.ok) {
@@ -73,16 +92,21 @@ export async function procesarWebhookTelegram(update: any): Promise<void> {
   const chatId = message.chat.id;
   const textoUsuario = message.text;
 
-  // Mantener el indicador "escribiendo..." activo durante todo el procesamiento.
-  // Telegram lo apaga solo a los ~5 segundos, así que lo reenviamos cada 4s
-  // mientras dure la consulta (incluidas las vueltas de tool calling).
   await enviarChatAction(chatId);
   const typingInterval = setInterval(() => enviarChatAction(chatId), 4000);
 
   try {
     const respuestaIa = await procesarMensajeChef(chatId, textoUsuario);
     clearInterval(typingInterval);
-    await enviarMensajeTelegram(chatId, respuestaIa);
+
+    const enviado = await enviarMensajeTelegram(chatId, respuestaIa);
+    if (!enviado) {
+      console.error('[Telegram] El envío de la respuesta falló, se avisa al chef.');
+      await enviarMensajeTelegram(
+        chatId,
+        'Procesé tu consulta pero no pude entregarte la respuesta. Probá de nuevo; si se repite, avisale a Gabriel.'
+      );
+    }
   } catch (error: any) {
     clearInterval(typingInterval);
     console.error('Error al procesar el mensaje en el webhook:', error);
