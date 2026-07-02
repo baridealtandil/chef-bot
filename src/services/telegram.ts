@@ -1,5 +1,5 @@
 import dotenv from 'dotenv';
-import { procesarMensajeChef } from './gemini.js';
+import { procesarMensajeChef } from './claude.js';
 
 dotenv.config();
 
