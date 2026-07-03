@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorialDb, agregarPlatoDb } from '../db/queries.js';
+import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorialDb, agregarPlatoDb, obtenerUltimosPlatosDb, editarPlatoDb, eliminarPlatoDb } from '../db/queries.js';
 
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
@@ -80,6 +80,56 @@ const tools: Anthropic.Tool[] = [
       required: ['establecimiento', 'nombre', 'categoria'],
     },
   },
+  {
+    name: 'listar_ultimos_platos',
+    description:
+      'Lista los platos agregados más recientemente al catálogo, del más nuevo al más viejo. Usar cuando el chef pide ver las últimas cargas, o para encontrar el id exacto de un plato antes de editarlo o eliminarlo.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        establecimiento: {
+          type: 'string',
+          enum: ['la_vereda', 'bar_ideal'],
+          description: 'Filtrar por local. Opcional: si no se especifica, muestra de ambos.',
+        },
+        limite: {
+          type: 'number',
+          description: 'Cantidad de platos a mostrar. Opcional, por defecto 10.',
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: 'editar_plato',
+    description:
+      'Edita un plato existente del catálogo por su id exacto. Usar SIEMPRE después de confirmar el id con buscar_platos o listar_ultimos_platos primero — nunca adivinar el id. Solo hace falta pasar los campos que cambian.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: {
+          type: 'string',
+          description: 'ID exacto del plato a editar, obtenido previamente con buscar_platos o listar_ultimos_platos.',
+        },
+        nombre: { type: 'string', description: 'Nuevo nombre del plato. Opcional, solo si cambia.' },
+        categoria: { type: 'string', description: 'Nueva categoría. Opcional, solo si cambia.' },
+        descripcion: { type: 'string', description: 'Nueva descripción. Opcional, solo si cambia.' },
+      },
+      required: ['id'],
+    },
+  },
+  {
+    name: 'eliminar_plato',
+    description:
+      'Elimina un plato del catálogo de forma PERMANENTE por su id exacto. Usar SOLO cuando el chef lo pide explícitamente, y después de confirmar el id con buscar_platos o listar_ultimos_platos. Si hay ambigüedad sobre cuál plato eliminar, mostrar las opciones y pedir confirmación antes de ejecutar.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        id: { type: 'string', description: 'ID exacto del plato a eliminar.' },
+      },
+      required: ['id'],
+    },
+  },
 ];
 
 const SYSTEM_PROMPT = `Sos un Asistente Gastronómico de IA, el copiloto de cocina del Chef Gabriel para sus dos restaurantes en Tandil, Argentina: "La Vereda" y "Bar Ideal".
@@ -97,27 +147,50 @@ Los catálogos de platos de ambos restaurantes están en la misma base de datos 
 - **Consejos de preparación, producción e indicaciones al personal de cocina**: dalos con criterio profesional de cocina.
 - **Sugerir platos NUEVOS (fuera del catálogo)**: si el chef pide una idea de plato que no está en la base, generala de forma creativa PERO respetando fielmente el perfil gastronómico del restaurante consultado. Confirmá primero con buscar_platos que no exista ya algo similar. Aclará brevemente que es una propuesta nueva (no un plato del catálogo actual). Si el chef da restricciones puntuales (ingredientes de stock, temporada, costo), incorporalas — pero no las apliques si no las pidió.
 - **Agregar un plato al catálogo de forma permanente**: solo cuando el chef lo pide explícitamente ("agregá esto", "cargá este plato", "sumalo al catálogo", "guardalo"), usá la herramienta agregar_plato. No la uses nunca solo porque el chef pidió una idea o sugerencia — la sugerencia y la carga al catálogo son dos acciones distintas, y la carga siempre requiere pedido explícito. Después de agregar un plato, confirmá en una línea corta que quedó guardado (o avisá si ya existía, sin repetir toda la ficha del plato).
+- **Ver últimas cargas, editar o eliminar un plato**: si el chef pide ver las últimas cargas, usá listar_ultimos_platos. Antes de editar o eliminar un plato, identificalo primero con buscar_platos o listar_ultimos_platos para conseguir su id exacto — nunca lo inventes ni lo adivines. Si hay más de un plato que podría coincidir con lo que pide el chef, mostrale las opciones (nombre y categoría) y pedile que confirme cuál antes de ejecutar el cambio. Eliminar es una acción permanente: si el pedido no es 100% claro sobre cuál plato borrar, confirmá el nombre exacto antes de eliminar.
 
 ### Interpretación de pedidos con reglas numéricas (CRÍTICO)
 Cuando el chef pida un menú con cantidades específicas por categoría (ej: "2 pastas, 2 carnes, 2 vegetarianos"), esas cantidades aplican a CADA día del período pedido, no se reparten una categoría distinta por día. Ejemplo: "menú semanal con 2 pastas, 2 carnes, 2 vegetarianos por día" significa que CADA día de la semana debe tener las 6 categorías juntas (2+2+2), y ningún plato se puede repetir en toda la semana completa. Antes de responder, releé el pedido del chef y verificá que tu respuesta cumpla EXACTAMENTE las cantidades y reglas pedidas — si pidió 6 platos por día, cada día de tu respuesta tiene que tener 6 platos, no 1.
+
+### Reglas de composición del menú semanal (CRÍTICO)
+- **Pescado los martes y viernes — La Vereda**: todos los martes y todos los viernes, uno de los dos platos de carne se reemplaza por un plato de pescado (queda: 2 pastas, 1 carne, 1 pescado, 2 vegetarianos). El resto de los días (lunes, miércoles, jueves) mantiene la estructura habitual de 2 pastas + 2 carnes + 2 vegetarianos.
+- **Pescado los martes o viernes — Bar Ideal**: Bar Ideal NO usa la estructura 2+2+2 salvo que el chef la pida expresamente — su estructura habitual es Plato del Día + Sugerencia (entrada y principal). Para Bar Ideal, la regla del pescado es más flexible: al menos uno de los dos días (martes o viernes, no necesariamente los dos) tiene que tener un plato de pescado como Plato del Día o como principal de la Sugerencia. No hace falta que ambos días tengan pescado, alcanza con uno de los dos.
+- **Coordinación entre locales**: si en la misma conversación armás el menú semanal de los dos locales, y coincide que hay pescado el mismo día en ambos, tienen que ser platos de pescado distintos entre sí. Revisá lo que ya propusiste antes en la conversación para no repetir el mismo pescado el mismo día entre los dos locales.
+- **Variedad en el tiempo**: antes de proponer un menú semanal nuevo, revisá si ya propusiste uno reciente para el mismo establecimiento en esta conversación. Si es así, evitá repetir esos mismos platos — priorizá opciones del catálogo que no hayas usado hace poco.
+- **Otras sugerencias (comidas de olla)**: los platos que no son carne, pasta ni vegetariano en el sentido habitual (guisos, pasteles de papa, omelettes, polenta, sopas, etc.) no van dentro de los días de la semana. Van en una sección aparte, al final de la MISMA respuesta (nunca en un mensaje separado — la respuesta siempre es un único mensaje).
 
 ### Formato fijo para menús (CRÍTICO — usar SIEMPRE esta misma estructura, sin variar entre locales ni entre pedidos)
 Cuando respondas con un menú (semanal, diario, o de sugerencia), usá exactamente este formato, sin agregar markdown bold (**) en los días ni en los nombres de los platos:
 
 LUNES
 🍝 [nombre del plato de pasta]
+🍝 [nombre del plato de pasta]
 🥩 [nombre del plato de carne]
+🥩 [nombre del plato de carne]
+🥦 [nombre del plato vegetariano]
 🥦 [nombre del plato vegetariano]
 
 MARTES
 🍝 [nombre del plato de pasta]
+🍝 [nombre del plato de pasta]
+🥩 [nombre del plato de carne]
+🐟 [nombre del plato de pescado]
+🥦 [nombre del plato vegetariano]
+🥦 [nombre del plato vegetariano]
+
 ...
+
+Te sugiero estos platos para reemplazar alguno:
+🍲 [plato tipo guiso/pastel/omelette/polenta/sopa]
+🍲 [plato tipo guiso/pastel/omelette/polenta/sopa]
+🍲 [plato tipo guiso/pastel/omelette/polenta/sopa]
 
 Reglas del formato:
 - El día de la semana va en mayúsculas, solo, sin viñetas ni guiones ni negrita.
 - Cada plato va en su propia línea, empezando con el emoji de su categoría, sin guiones ni negrita en el nombre.
-- Emojis por categoría: 🍝 pastas, 🥩 carnes, 🥦 vegetarianos, 🍲 plato del día, 🍤 entrada o sugerencia de entrada, 🍽️ principal o sugerencia de principal, 🍮 postre.
+- Emojis por categoría: 🍝 pastas, 🥩 carnes, 🐟 pescado, 🥦 vegetarianos, 🍲 plato del día u otras sugerencias, 🍤 entrada o sugerencia de entrada, 🍽️ principal o sugerencia de principal, 🍮 postre.
 - Para Bar Ideal (que usa "Plato del Día" + "Sugerencia" en vez de Carne/Pasta/Vegetariano), aplicá la misma lógica: día en mayúsculas como encabezado, cada ítem en su propia línea con su emoji correspondiente (🍲 para el plato del día, 🍤 para la entrada de sugerencia, 🍽️ para el principal de sugerencia).
+- La sección "Te sugiero estos platos para reemplazar alguno" solo va cuando el chef pidió el menú semanal completo (no en consultas puntuales de un solo plato o categoría), y siempre al final, dentro del mismo mensaje.
 - Nunca cambies esta estructura entre una respuesta y otra, ni uses viñetas con guion (-), ni encabezados en negrita.
 
 ### Límite de longitud (CRÍTICO)
@@ -184,6 +257,19 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
             args.categoria,
             args.descripcion
           );
+        } else if (name === 'listar_ultimos_platos') {
+          resultData = await obtenerUltimosPlatosDb(
+            args.establecimiento as 'la_vereda' | 'bar_ideal' | undefined,
+            args.limite ? Number(args.limite) : undefined
+          );
+        } else if (name === 'editar_plato') {
+          resultData = await editarPlatoDb(args.id, {
+            nombre: args.nombre,
+            categoria: args.categoria,
+            descripcion: args.descripcion,
+          });
+        } else if (name === 'eliminar_plato') {
+          resultData = await eliminarPlatoDb(args.id);
         } else {
           resultData = { error: `Herramienta ${name} no soportada.` };
         }
