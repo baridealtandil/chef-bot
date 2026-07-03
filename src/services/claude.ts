@@ -387,11 +387,11 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
   }
 
   // Salida de emergencia: si se agotaron las vueltas de tool calling y todavía no hay
-  // texto final (caso raro), forzamos una última respuesta SIN herramientas, con todo lo
-  // que ya se juntó hasta ahora, en vez de devolver un error genérico sin información.
+  // texto final (caso raro), forzamos una última respuesta SIN herramientas, usando SOLO
+  // las rondas ya completadas (con sus resultados resueltos) — nunca la consulta a medio
+  // resolver, porque la API rechaza una consulta sin su resultado correspondiente.
   if (response.stop_reason === 'tool_use') {
     console.warn('[Claude] Se agotó MAX_TOOL_ROUNDS sin respuesta de texto. Forzando respuesta final.');
-    messages.push({ role: 'assistant' as const, content: response.content });
     messages.push({
       role: 'user' as const,
       content: 'Con lo que ya averiguaste hasta ahora, dame la mejor respuesta posible en texto — no consultes nada más.',
