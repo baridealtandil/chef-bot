@@ -158,6 +158,12 @@ Los catálogos de platos de ambos restaurantes están en la misma base de datos 
 ### Interpretación de pedidos con reglas numéricas (CRÍTICO)
 Cuando el chef pida un menú con cantidades específicas por categoría (ej: "2 pastas, 2 carnes, 2 vegetarianos"), esas cantidades aplican a CADA día del período pedido, no se reparten una categoría distinta por día. Ejemplo: "menú semanal con 2 pastas, 2 carnes, 2 vegetarianos por día" significa que CADA día de la semana debe tener las 6 categorías juntas (2+2+2), y ningún plato se puede repetir en toda la semana completa. Antes de responder, releé el pedido del chef y verificá que tu respuesta cumpla EXACTAMENTE las cantidades y reglas pedidas — si pidió 6 platos por día, cada día de tu respuesta tiene que tener 6 platos, no 1.
 
+### La estructura del menú no es fija por local — es lo que el chef pida (CRÍTICO)
+Las estructuras habituales (2 pastas + 2 carnes + 2 vegetarianos para La Vereda; Plato del Día + Sugerencia para Bar Ideal) son el default cuando el chef no aclara nada distinto. Pero si el chef pide explícitamente la OTRA estructura para cualquiera de los dos locales (ej: "quiero un 2+2+2 para el Ideal", o "dame plato del día + sugerencia para La Vereda"), armala tal cual la pidió, usando el formato visual que corresponda a esa estructura, sin importar que sea inusual para ese local.
+
+### Si el catálogo no alcanza, resolvelo vos — no te frenes a preguntar (CRÍTICO)
+Si para cumplir la estructura pedida no hay suficientes platos distintos en el catálogo real sin repetir, NO le devuelvas al chef una lista de opciones para que elija ni le pidas permiso para seguir. Resolvelo directamente vos: completá los días o categorías que falten con propuestas nuevas creativas, siguiendo el perfil gastronómico del local — el mismo criterio que usarías si el chef pidiera una idea nueva puntual. Al final de la respuesta, agregá una línea corta indicando cuáles platos son nuevos (no están en el catálogo todavía), pero sin frenar el armado del menú por eso ni convertirlo en una consulta de varias opciones.
+
 ### Reglas de composición del menú semanal (CRÍTICO)
 - **Pescado los martes y viernes — La Vereda**: todos los martes y todos los viernes, uno de los dos platos de carne se reemplaza por un plato de pescado (queda: 2 pastas, 1 carne, 1 pescado, 2 vegetarianos). El resto de los días (lunes, miércoles, jueves) mantiene la estructura habitual de 2 pastas + 2 carnes + 2 vegetarianos.
 - **Pescado los martes o viernes — Bar Ideal**: Bar Ideal NO usa la estructura 2+2+2 salvo que el chef la pida expresamente — su estructura habitual es Plato del Día + Sugerencia (entrada y principal). Para Bar Ideal, la regla del pescado es más flexible: al menos uno de los dos días (martes o viernes, no necesariamente los dos) tiene que tener un plato de pescado como Plato del Día o como principal de la Sugerencia. No hace falta que ambos días tengan pescado, alcanza con uno de los dos.
@@ -239,12 +245,13 @@ Telegram permite un máximo de 4096 caracteres por mensaje, y las respuestas se 
 // Detecta si el mensaje es exactamente una selección de establecimiento (con o sin el emoji del botón).
 // Es determinístico a propósito: no depende de que la IA lo interprete bien.
 function detectarSeleccionEstablecimiento(texto: string): 'la_vereda' | 'bar_ideal' | null {
-  const limpio = texto
-    .replace(/[^\p{L}\s]/gu, '') // saca emojis y signos, deja solo letras y espacios
-    .trim()
-    .toLowerCase();
-  if (limpio === 'la vereda') return 'la_vereda';
-  if (limpio === 'bar ideal') return 'bar_ideal';
+  const limpio = texto.toLowerCase();
+  const mencionaVereda = /\bla\s+vereda\b/.test(limpio);
+  const mencionaIdeal = /\bbar\s+ideal\b/.test(limpio);
+  // Si menciona los dos (o ninguno), no se puede resolver de forma determinística: se deja
+  // que la conversación siga su curso normal sin forzar un cambio de sesión.
+  if (mencionaVereda && !mencionaIdeal) return 'la_vereda';
+  if (mencionaIdeal && !mencionaVereda) return 'bar_ideal';
   return null;
 }
 
@@ -267,13 +274,18 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
 
   if (seleccion) {
     establecimientoActual = seleccion;
-    if (sesion.pending_accion) {
-      // Había un comando ambiguo esperando el negocio (ej: tocó "sugerime algo" y después el negocio).
-      // Lo retomamos combinado, sin que el chef tenga que volver a tocar el botón original.
+    const soloElNombre = /^\s*(la\s+vereda|bar\s+ideal)\s*$/i.test(
+      textoUsuario.replace(/[^\p{L}\s]/gu, '').trim()
+    );
+    if (sesion.pending_accion && soloElNombre) {
+      // El chef solo contestó el nombre del negocio (ej: tocó el botón), sin agregar nada más.
+      // Retomamos el pedido pendiente combinado, sin que tenga que volver a tocar el botón original.
       mensajeParaClaude = `${sesion.pending_accion} (${nombreLegible(seleccion)})`;
       await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
     } else {
-      await actualizarSesionDb(chatId, { establecimiento: seleccion });
+      // El chef mencionó el negocio dentro de un mensaje con más contenido (ej: "es para La Vereda, con pollo"):
+      // usamos su mensaje completo tal cual, sin recortar nada, y limpiamos cualquier pedido pendiente viejo.
+      await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
     }
   } else if (esComandoAmbiguo(textoUsuario) && !establecimientoActual) {
     // Comando ambiguo sin negocio definido: se resuelve acá mismo, SIN llamar a la IA.
