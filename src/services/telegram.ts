@@ -12,10 +12,10 @@ const AVISO_RECORTE = '\n\n(Respuesta recortada por límite de Telegram — pedi
 // Teclado de botones fijo: cada botón manda su propio texto como si el chef lo hubiera escrito.
 const TECLADO_PRINCIPAL = {
   keyboard: [
-    [{ text: 'La Vereda' }, { text: 'Bar Ideal' }],
+    [{ text: '🅛 La Vereda' }, { text: '🅘 Bar Ideal' }],
     [
-      { text: 'Menú semanal: plato del día + sugerencia' },
       { text: 'Menú semanal: 2 carnes + 2 pastas + 2 vegetarianos' },
+      { text: 'Menú semanal: plato del día + sugerencia' },
     ],
     [{ text: 'Agregar un plato al catálogo' }, { text: 'Dame una idea de plato nuevo' }],
     [{ text: 'Últimos platos agregados' }],
