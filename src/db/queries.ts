@@ -181,11 +181,12 @@ export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', co
 export async function obtenerHistorialDb(chatId: number, limit = 20): Promise<Mensaje[]> {
   const db = getSql();
   return await db<Mensaje[]>`
-    SELECT rol, contenido
-    FROM conversaciones
-    WHERE chat_id = ${chatId}
-    ORDER BY created_at ASC
-    LIMIT ${limit}
+          SELECT rol, contenido, created_at FROM (
+                  SELECT rol, contenido, created_at FROM conversaciones
+                          WHERE chat_id = ${chatId}
+                                  ORDER BY created_at DESC
+                                          LIMIT ${limit}
+                                                ) sub ORDER BY created_at ASC
   `;
 }
 // Obtiene el estado de sesión (negocio activo y acción pendiente) para un chat.
