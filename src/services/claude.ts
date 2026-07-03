@@ -9,7 +9,7 @@ const client = new Anthropic({ apiKey: anthropicApiKey });
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
 const MAX_TOKENS = 4096;
-const MAX_TOOL_ROUNDS = 5; // límite de seguridad para evitar loops infinitos de tool calling
+const MAX_TOOL_ROUNDS = 20; // límite de seguridad para evitar loops infinitos de tool calling
 const HISTORIAL_MENSAJES = 20;
 
 const tools: Anthropic.Tool[] = [
@@ -382,6 +382,24 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
       max_tokens: MAX_TOKENS,
       system: systemPromptConContexto,
       tools,
+      messages,
+    });
+  }
+
+  // Salida de emergencia: si se agotaron las vueltas de tool calling y todavía no hay
+  // texto final (caso raro), forzamos una última respuesta SIN herramientas, con todo lo
+  // que ya se juntó hasta ahora, en vez de devolver un error genérico sin información.
+  if (response.stop_reason === 'tool_use') {
+    console.warn('[Claude] Se agotó MAX_TOOL_ROUNDS sin respuesta de texto. Forzando respuesta final.');
+    messages.push({ role: 'assistant' as const, content: response.content });
+    messages.push({
+      role: 'user' as const,
+      content: 'Con lo que ya averiguaste hasta ahora, dame la mejor respuesta posible en texto — no consultes nada más.',
+    });
+    response = await client.messages.create({
+      model: MODEL,
+      max_tokens: MAX_TOKENS,
+      system: systemPromptConContexto,
       messages,
     });
   }
