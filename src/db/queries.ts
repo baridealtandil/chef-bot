@@ -48,6 +48,14 @@ export async function inicializarBaseDeDatos(): Promise<void> {
   `;
   console.log('[DB] Tabla sesiones_chat verificada/creada correctamente.');
 }
+// Borra todo el historial de conversación y las sesiones activas. Pensado para uso único,
+// para arrancar limpio después de un período de pruebas.
+export async function limpiarHistorialDePruebas(): Promise<{ conversaciones: number; sesiones: number }> {
+  const db = getSql();
+  const conversaciones = await db`DELETE FROM conversaciones RETURNING id`;
+  const sesiones = await db`DELETE FROM sesiones_chat RETURNING chat_id`;
+  return { conversaciones: conversaciones.length, sesiones: sesiones.length };
+}
 export async function buscarPlatosDb(
   establecimiento: 'la_vereda' | 'bar_ideal',
   query?: string,
@@ -180,14 +188,16 @@ export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', co
 }
 export async function obtenerHistorialDb(chatId: number, limit = 20): Promise<Mensaje[]> {
   const db = getSql();
-  return await db<Mensaje[]>`
-          SELECT rol, contenido, created_at FROM (
-                  SELECT rol, contenido, created_at FROM conversaciones
-                          WHERE chat_id = ${chatId}
-                                  ORDER BY created_at DESC
-                                          LIMIT ${limit}
-                                                ) sub ORDER BY created_at ASC
+  // Primero traemos los N más RECIENTES (DESC + LIMIT), y después los reordenamos
+  // cronológicamente (ASC) para pasárselos a Claude en el orden correcto de la charla.
+  const recientes = await db<Mensaje[]>`
+    SELECT rol, contenido, created_at
+    FROM conversaciones
+    WHERE chat_id = ${chatId}
+    ORDER BY created_at DESC
+    LIMIT ${limit}
   `;
+  return recientes.reverse();
 }
 // Obtiene el estado de sesión (negocio activo y acción pendiente) para un chat.
 // Devuelve valores en null si el chat todavía no tiene sesión registrada.
