@@ -17,8 +17,7 @@ const TECLADO_PRINCIPAL = {
       { text: 'Menú semanal: 2 carnes + 2 pastas + 2 vegetarianos' },
       { text: 'Menú semanal: plato del día + sugerencia' },
     ],
-    [{ text: 'Agregar un plato al catálogo' }, { text: 'Dame una idea de plato nuevo' }],
-    [{ text: 'Últimos platos agregados' }],
+    [{ text: 'cargar nuevo plato' }, { text: 'sugerime algo' }, { text: 'modificar nuevos platos' }],
   ],
   resize_keyboard: true,
 };
