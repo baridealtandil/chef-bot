@@ -1,218 +1,74 @@
-import postgres from 'postgres';
+import { Hono } from 'hono';
+import { serve } from '@hono/node-server';
 import dotenv from 'dotenv';
+import { procesarWebhookTelegram, configurarWebhookTelegram } from './services/telegram.js';
+import { inicializarBaseDeDatos } from './db/queries.js';
+
 dotenv.config();
-const databaseUrl = process.env.DATABASE_URL;
-// Inicializar la conexión de forma perezosa
-let sql: postgres.Sql;
-function getSql() {
-  if (!sql) {
-    if (!databaseUrl) {
-      throw new Error('DATABASE_URL no configurada en las variables de entorno.');
-    }
-    sql = postgres(databaseUrl);
-  }
-  return sql;
-}
-export interface Plato {
-  id: string;
-  nombre: string;
-  establecimiento: 'la_vereda' | 'bar_ideal';
-  categoria: string;
-  descripcion: string | null;
-  plato_compartido: boolean;
-  created_at: Date;
-}
-export interface Mensaje {
-  id: string;
-  chat_id: number;
-  rol: 'user' | 'model';
-  contenido: string;
-  created_at: Date;
-}
-export interface SesionChat {
-  chat_id: number;
-  establecimiento: 'la_vereda' | 'bar_ideal' | null;
-  pending_accion: string | null;
-}
-// Crea la tabla de sesiones si todavía no existe. Se llama una vez al arrancar el servidor,
-// así no hace falta correr ningún SQL a mano en Railway.
-export async function inicializarBaseDeDatos(): Promise<void> {
-  const db = getSql();
-  await db`
-    CREATE TABLE IF NOT EXISTS sesiones_chat (
-      chat_id BIGINT PRIMARY KEY,
-      establecimiento VARCHAR(20),
-      pending_accion TEXT,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `;
-  console.log('[DB] Tabla sesiones_chat verificada/creada correctamente.');
-}
-export async function buscarPlatosDb(
-  establecimiento: 'la_vereda' | 'bar_ideal',
-  query?: string,
-  categoria?: string
-): Promise<Plato[]> {
-  const db = getSql();
 
-  if (query && categoria) {
-    return await db<Plato[]>`
-      SELECT * FROM platos
-      WHERE establecimiento = ${establecimiento}
-        AND categoria = ${categoria}
-        AND nombre ILIKE ${'%' + query + '%'}
-      ORDER BY nombre ASC
-    `;
-  } else if (query) {
-    return await db<Plato[]>`
-      SELECT * FROM platos
-      WHERE establecimiento = ${establecimiento}
-        AND nombre ILIKE ${'%' + query + '%'}
-      ORDER BY nombre ASC
-    `;
-  } else if (categoria) {
-    return await db<Plato[]>`
-      SELECT * FROM platos
-      WHERE establecimiento = ${establecimiento}
-        AND categoria = ${categoria}
-      ORDER BY nombre ASC
-    `;
+const app = new Hono();
+
+// Ruta de healthcheck
+app.get('/', (c) => c.text('Chef Bot (Bar Ideal + La Vereda) API is active.'));
+
+// Ruta de depuración para variables de entorno
+app.get('/debug', (c) => {
+  return c.json({
+    telegramToken: process.env.TELEGRAM_BOT_TOKEN ? 'defined' : 'undefined',
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY ? 'defined' : 'undefined',
+    geminiApiKey: process.env.GEMINI_API_KEY ? 'defined' : 'undefined',
+    databaseUrl: process.env.DATABASE_URL ? 'defined' : 'undefined',
+    port: process.env.PORT,
+    nodeEnv: process.env.NODE_ENV,
+  });
+});
+
+// Ruta del webhook de Telegram
+app.post('/webhook', async (c) => {
+  try {
+    const body = await c.req.json();
+    // Esperar a que el procesamiento termine antes de responder, para que Railway no congele el contenedor
+    await procesarWebhookTelegram(body);
+    return c.json({ ok: true });
+  } catch (error: any) {
+    console.error('Error procesando webhook:', error);
+    return c.json({ error: error.message || 'Invalid JSON' }, 400);
+  }
+});
+
+// Ruta para registrar el webhook con Telegram de manera sencilla
+app.post('/setup-webhook', async (c) => {
+  const { url } = await c.req.json();
+  if (!url) {
+    return c.json({ error: 'Falta el campo "url" en el cuerpo de la solicitud.' }, 400);
+  }
+
+  const exito = await configurarWebhookTelegram(url);
+  if (exito) {
+    return c.json({ ok: true, message: `Webhook configurado con éxito a ${url}/webhook` });
   } else {
-    return await db<Plato[]>`
-      SELECT * FROM platos
-      WHERE establecimiento = ${establecimiento}
-      ORDER BY nombre ASC
-    `;
+    return c.json({ error: 'No se pudo configurar el webhook con Telegram.' }, 500);
+  }
+});
+
+// Puerto del servidor
+const port = Number(process.env.PORT) || 3000;
+
+async function iniciar() {
+  // El servidor arranca a escuchar PRIMERO, sin esperar nada — así Railway nunca lo ve colgado.
+  console.log(`Iniciando servidor Hono en el puerto ${port}...`);
+  serve({
+    fetch: app.fetch,
+    port: port,
+  });
+
+  // La inicialización de la base corre después, en paralelo. Si falla o tarda, el servidor
+  // ya está arriba y respondiendo — no se cuelga por esto.
+  try {
+    await inicializarBaseDeDatos();
+  } catch (error) {
+    console.error('[DB] Error al inicializar la base de datos (el servidor sigue funcionando igual):', error);
   }
 }
-export async function obtenerCategoriasDb(establecimiento: 'la_vereda' | 'bar_ideal'): Promise<string[]> {
-  const db = getSql();
-  const rows = await db`
-    SELECT DISTINCT categoria FROM platos
-    WHERE establecimiento = ${establecimiento}
-    ORDER BY categoria ASC
-  `;
-  return rows.map(r => r.categoria);
-}
-export async function agregarPlatoDb(
-  establecimiento: 'la_vereda' | 'bar_ideal',
-  nombre: string,
-  categoria: string,
-  descripcion?: string
-): Promise<{ creado: boolean; plato?: Plato; motivo?: string }> {
-  const db = getSql();
 
-  const existentes = await db<Plato[]>`
-    SELECT * FROM platos
-    WHERE establecimiento = ${establecimiento}
-      AND LOWER(nombre) = LOWER(${nombre})
-  `;
-
-  if (existentes.length > 0) {
-    return {
-      creado: false,
-      motivo: 'Ya existe un plato con ese nombre en este establecimiento.',
-      plato: existentes[0],
-    };
-  }
-
-  const [nuevo] = await db<Plato[]>`
-    INSERT INTO platos (establecimiento, nombre, categoria, descripcion)
-    VALUES (${establecimiento}, ${nombre}, ${categoria}, ${descripcion ?? null})
-    RETURNING *
-  `;
-
-  return { creado: true, plato: nuevo };
-}
-// Lista los platos más recientes (útil para revisar cargas nuevas o encontrar el id de algo agregado hace poco)
-export async function obtenerUltimosPlatosDb(
-  establecimiento?: 'la_vereda' | 'bar_ideal',
-  limite = 10
-): Promise<Plato[]> {
-  const db = getSql();
-  if (establecimiento) {
-    return await db<Plato[]>`
-      SELECT * FROM platos
-      WHERE establecimiento = ${establecimiento}
-      ORDER BY created_at DESC
-      LIMIT ${limite}
-    `;
-  }
-  return await db<Plato[]>`
-    SELECT * FROM platos
-    ORDER BY created_at DESC
-    LIMIT ${limite}
-  `;
-}
-// Edita un plato existente por id. Solo actualiza los campos que se pasan (los demás quedan igual)
-export async function editarPlatoDb(
-  id: string,
-  cambios: { nombre?: string; categoria?: string; descripcion?: string }
-): Promise<Plato | null> {
-  const db = getSql();
-  const [actualizado] = await db<Plato[]>`
-    UPDATE platos
-    SET
-      nombre = COALESCE(${cambios.nombre ?? null}, nombre),
-      categoria = COALESCE(${cambios.categoria ?? null}, categoria),
-      descripcion = COALESCE(${cambios.descripcion ?? null}, descripcion)
-    WHERE id = ${id}
-    RETURNING *
-  `;
-  return actualizado ?? null;
-}
-// Elimina un plato del catálogo de forma permanente por id
-export async function eliminarPlatoDb(id: string): Promise<Plato | null> {
-  const db = getSql();
-  const [eliminado] = await db<Plato[]>`
-    DELETE FROM platos
-    WHERE id = ${id}
-    RETURNING *
-  `;
-  return eliminado ?? null;
-}
-export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', contenido: string): Promise<void> {
-  const db = getSql();
-  await db`
-    INSERT INTO conversaciones (chat_id, rol, contenido)
-    VALUES (${chatId}, ${rol}, ${contenido})
-  `;
-}
-export async function obtenerHistorialDb(chatId: number, limit = 20): Promise<Mensaje[]> {
-  const db = getSql();
-  return await db<Mensaje[]>`
-    SELECT rol, contenido
-    FROM conversaciones
-    WHERE chat_id = ${chatId}
-    ORDER BY created_at ASC
-    LIMIT ${limit}
-  `;
-}
-// Obtiene el estado de sesión (negocio activo y acción pendiente) para un chat.
-// Devuelve valores en null si el chat todavía no tiene sesión registrada.
-export async function obtenerSesionDb(chatId: number): Promise<SesionChat> {
-  const db = getSql();
-  const rows = await db<SesionChat[]>`
-    SELECT chat_id, establecimiento, pending_accion
-    FROM sesiones_chat
-    WHERE chat_id = ${chatId}
-  `;
-  return rows[0] ?? { chat_id: chatId, establecimiento: null, pending_accion: null };
-}
-// Actualiza parcialmente la sesión de un chat (solo los campos que se pasan; el resto queda igual)
-export async function actualizarSesionDb(
-  chatId: number,
-  cambios: { establecimiento?: 'la_vereda' | 'bar_ideal' | null; pending_accion?: string | null }
-): Promise<void> {
-  const db = getSql();
-  const actual = await obtenerSesionDb(chatId);
-  const establecimiento = cambios.establecimiento !== undefined ? cambios.establecimiento : actual.establecimiento;
-  const pendingAccion = cambios.pending_accion !== undefined ? cambios.pending_accion : actual.pending_accion;
-
-  await db`
-    INSERT INTO sesiones_chat (chat_id, establecimiento, pending_accion, updated_at)
-    VALUES (${chatId}, ${establecimiento}, ${pendingAccion}, NOW())
-    ON CONFLICT (chat_id)
-    DO UPDATE SET establecimiento = ${establecimiento}, pending_accion = ${pendingAccion}, updated_at = NOW()
-  `;
-}
+iniciar();
