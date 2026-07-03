@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import dotenv from 'dotenv';
 import { procesarWebhookTelegram, configurarWebhookTelegram } from './services/telegram.js';
-import { inicializarBaseDeDatos } from './db/queries.js';
+import { inicializarBaseDeDatos, limpiarHistorialDePruebas } from './db/queries.js';
 
 dotenv.config();
 
@@ -49,6 +49,27 @@ app.post('/setup-webhook', async (c) => {
   } else {
     return c.json({ error: 'No se pudo configurar el webhook con Telegram.' }, 500);
   }
+});
+
+// Ruta de mantenimiento: borra todo el historial de conversación y sesiones activas.
+// Pensada para uso único (arrancar limpio después de pruebas). Requiere el parámetro
+// de confirmación en la URL para evitar que se dispare por accidente.
+app.get('/admin/limpiar-historial', async (c) => {
+  const confirmacion = c.req.query('confirmar');
+  if (confirmacion !== 'SI-BORRAR-TODO') {
+    return c.json(
+      { error: 'Falta confirmación. Agregá ?confirmar=SI-BORRAR-TODO a la URL para ejecutar esto.' },
+      400
+    );
+  }
+
+  const resultado = await limpiarHistorialDePruebas();
+  return c.json({
+    ok: true,
+    message: 'Historial de conversación y sesiones borrados.',
+    conversaciones_borradas: resultado.conversaciones,
+    sesiones_borradas: resultado.sesiones,
+  });
 });
 
 // Puerto del servidor
