@@ -105,6 +105,53 @@ export async function agregarPlatoDb(
 
   return { creado: true, plato: nuevo };
 }
+// Lista los platos más recientes (útil para revisar cargas nuevas o encontrar el id de algo agregado hace poco)
+export async function obtenerUltimosPlatosDb(
+  establecimiento?: 'la_vereda' | 'bar_ideal',
+  limite = 10
+): Promise<Plato[]> {
+  const db = getSql();
+  if (establecimiento) {
+    return await db<Plato[]>`
+      SELECT * FROM platos
+      WHERE establecimiento = ${establecimiento}
+      ORDER BY created_at DESC
+      LIMIT ${limite}
+    `;
+  }
+  return await db<Plato[]>`
+    SELECT * FROM platos
+    ORDER BY created_at DESC
+    LIMIT ${limite}
+  `;
+}
+// Edita un plato existente por id. Solo actualiza los campos que se pasan (los demás quedan igual)
+export async function editarPlatoDb(
+  id: string,
+  cambios: { nombre?: string; categoria?: string; descripcion?: string }
+): Promise<Plato | null> {
+  const db = getSql();
+  const [actualizado] = await db<Plato[]>`
+    UPDATE platos
+    SET
+      nombre = COALESCE(${cambios.nombre ?? null}, nombre),
+      categoria = COALESCE(${cambios.categoria ?? null}, categoria),
+      descripcion = COALESCE(${cambios.descripcion ?? null}, descripcion)
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return actualizado ?? null;
+}
+// Elimina un plato del catálogo de forma permanente por id
+export async function eliminarPlatoDb(id: string): Promise<Plato | null> {
+  const db = getSql();
+  const [eliminado] = await db<Plato[]>`
+    DELETE FROM platos
+    WHERE id = ${id}
+    RETURNING *
+  `;
+  return eliminado ?? null;
+}
 export async function guardarMensajeDb(chatId: number, rol: 'user' | 'model', contenido: string): Promise<void> {
   const db = getSql();
   await db`
