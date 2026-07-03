@@ -9,6 +9,20 @@ const telegramApiUrl = `https://api.telegram.org/bot${token}`;
 const LIMITE_TELEGRAM = 4096;
 const AVISO_RECORTE = '\n\n(Respuesta recortada por límite de Telegram — pedime que siga si falta algo)';
 
+// Teclado de botones fijo: cada botón manda su propio texto como si el chef lo hubiera escrito.
+const TECLADO_PRINCIPAL = {
+  keyboard: [
+    [{ text: 'La Vereda' }, { text: 'Bar Ideal' }],
+    [
+      { text: 'Menú semanal: plato del día + sugerencia' },
+      { text: 'Menú semanal: 2 carnes + 2 pastas + 2 vegetarianos' },
+    ],
+    [{ text: 'Agregar un plato al catálogo' }, { text: 'Dame una idea de plato nuevo' }],
+    [{ text: 'Últimos platos agregados' }],
+  ],
+  resize_keyboard: true,
+};
+
 async function enviarChatAction(chatId: number): Promise<void> {
   try {
     await fetch(`${telegramApiUrl}/sendChatAction`, {
@@ -53,6 +67,7 @@ export async function enviarMensajeTelegram(chatId: number, texto: string): Prom
         chat_id: chatId,
         text: textoFinal,
         parse_mode: 'Markdown',
+        reply_markup: TECLADO_PRINCIPAL,
       }),
     });
 
@@ -63,7 +78,11 @@ export async function enviarMensajeTelegram(chatId: number, texto: string): Prom
       const resPlano = await fetch(`${telegramApiUrl}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chatId, text: textoFinal }),
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: textoFinal,
+          reply_markup: TECLADO_PRINCIPAL,
+        }),
       });
 
       if (!resPlano.ok) {
