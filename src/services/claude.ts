@@ -3,7 +3,7 @@ import { buscarPlatosDb, obtenerCategoriasDb, guardarMensajeDb, obtenerHistorial
 
 const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
 if (!anthropicApiKey) {
-  console.error('Error: ANTHROPIC_API_KEY no está configurada.');
+    console.error('Error: ANTHROPIC_API_KEY no está configurada.');
 }
 const client = new Anthropic({ apiKey: anthropicApiKey });
 
@@ -14,123 +14,123 @@ const HISTORIAL_MENSAJES = 20;
 
 const tools: Anthropic.Tool[] = [
   {
-    name: 'buscar_platos',
-    description:
-      'Busca platos en el catálogo del restaurante especificado (la_vereda o bar_ideal). Permite filtrar por un término de búsqueda (ej. "pollo") o por categoría. Usar SIEMPRE antes de responder sobre platos existentes, y también para confirmar si un plato que el chef menciona ya existe en el catálogo antes de proponerlo como algo nuevo.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
+        name: 'buscar_platos',
+        description:
+                'Busca platos en el catálogo del restaurante especificado (la_vereda o bar_ideal). Permite filtrar por un término de búsqueda (ej. "pollo") o por categoría. Usar SIEMPRE antes de responder sobre platos existentes, y también para confirmar si un plato que el chef menciona ya existe en el catálogo antes de proponerlo como algo nuevo.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          establecimiento: {
+                                      type: 'string',
+                                      enum: ['la_vereda', 'bar_ideal'],
+                                      description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
+                          },
+                          query: {
+                                      type: 'string',
+                                      description: 'Término de búsqueda para filtrar platos (ej: "bondiola", "pasta", "milanesa"). Opcional.',
+                          },
+                          categoria: {
+                                      type: 'string',
+                                      description: 'Categoría específica de platos (ej: "pastas", "carnes", "postres", "entradas"). Opcional.',
+                          },
+                },
+                required: ['establecimiento'],
         },
-        query: {
-          type: 'string',
-          description: 'Término de búsqueda para filtrar platos (ej: "bondiola", "pasta", "milanesa"). Opcional.',
-        },
-        categoria: {
-          type: 'string',
-          description: 'Categoría específica de platos (ej: "pastas", "carnes", "postres", "entradas"). Opcional.',
-        },
-      },
-      required: ['establecimiento'],
-    },
   },
   {
-    name: 'obtener_categorias',
-    description: 'Obtiene el listado de categorías únicas de platos disponibles en un establecimiento.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
+        name: 'obtener_categorias',
+        description: 'Obtiene el listado de categorías únicas de platos disponibles en un establecimiento.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          establecimiento: {
+                                      type: 'string',
+                                      enum: ['la_vereda', 'bar_ideal'],
+                                      description: 'El restaurante sobre el cual se realiza la consulta. Obligatorio.',
+                          },
+                },
+                required: ['establecimiento'],
         },
-      },
-      required: ['establecimiento'],
-    },
   },
   {
-    name: 'agregar_plato',
-    description:
-      'Guarda un plato NUEVO de forma permanente en el catálogo del establecimiento. Usar SOLO cuando el chef pide explícitamente agregar, cargar, sumar o guardar un plato al catálogo (ej: "agregá este plato a La Vereda", "cargá esta receta nueva al Ideal"). NUNCA usar esta herramienta cuando el chef solo pide una idea o sugerencia de plato nuevo sin pedir que se guarde.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'El restaurante al que pertenece el plato nuevo. Obligatorio.',
+        name: 'agregar_plato',
+        description:
+                'Guarda un plato NUEVO de forma permanente en el catálogo del establecimiento. Usar SOLO cuando el chef pide explícitamente agregar, cargar, sumar o guardar un plato al catálogo (ej: "agregá este plato a La Vereda", "cargá esta receta nueva al Ideal"). NUNCA usar esta herramienta cuando el chef solo pide una idea o sugerencia de plato nuevo sin pedir que se guarde.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          establecimiento: {
+                                      type: 'string',
+                                      enum: ['la_vereda', 'bar_ideal'],
+                                      description: 'El restaurante al que pertenece el plato nuevo. Obligatorio.',
+                          },
+                          nombre: {
+                                      type: 'string',
+                                      description: 'Nombre completo del plato, incluyendo guarnición si corresponde (ej: "Bondiola a la mostaza con puré de batatas"). Obligatorio.',
+                          },
+                          categoria: {
+                                      type: 'string',
+                                      description: 'Categoría del plato (ej: "carnes", "pastas", "vegetarianos", "postres", "entradas"). Obligatorio.',
+                          },
+                          descripcion: {
+                                      type: 'string',
+                                      description: 'Descripción u observaciones adicionales del plato. Opcional.',
+                          },
+                },
+                required: ['establecimiento', 'nombre', 'categoria'],
         },
-        nombre: {
-          type: 'string',
-          description: 'Nombre completo del plato, incluyendo guarnición si corresponde (ej: "Bondiola a la mostaza con puré de batatas"). Obligatorio.',
-        },
-        categoria: {
-          type: 'string',
-          description: 'Categoría del plato (ej: "carnes", "pastas", "vegetarianos", "postres", "entradas"). Obligatorio.',
-        },
-        descripcion: {
-          type: 'string',
-          description: 'Descripción u observaciones adicionales del plato. Opcional.',
-        },
-      },
-      required: ['establecimiento', 'nombre', 'categoria'],
-    },
   },
   {
-    name: 'listar_ultimos_platos',
-    description:
-      'Lista los platos agregados más recientemente al catálogo, del más nuevo al más viejo. Usar cuando el chef pide ver las últimas cargas, o para encontrar el id exacto de un plato antes de editarlo o eliminarlo.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        establecimiento: {
-          type: 'string',
-          enum: ['la_vereda', 'bar_ideal'],
-          description: 'Filtrar por local. Opcional: si no se especifica, muestra de ambos.',
+        name: 'listar_ultimos_platos',
+        description:
+                'Lista los platos agregados más recientemente al catálogo, del más nuevo al más viejo. Usar cuando el chef pide ver las últimas cargas, o para encontrar el id exacto de un plato antes de editarlo o eliminarlo.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          establecimiento: {
+                                      type: 'string',
+                                      enum: ['la_vereda', 'bar_ideal'],
+                                      description: 'Filtrar por local. Opcional: si no se especifica, muestra de ambos.',
+                          },
+                          limite: {
+                                      type: 'number',
+                                      description: 'Cantidad de platos a mostrar. Opcional, por defecto 10.',
+                          },
+                },
+                required: [],
         },
-        limite: {
-          type: 'number',
-          description: 'Cantidad de platos a mostrar. Opcional, por defecto 10.',
-        },
-      },
-      required: [],
-    },
   },
   {
-    name: 'editar_plato',
-    description:
-      'Edita un plato existente del catálogo por su id exacto. Usar SIEMPRE después de confirmar el id con buscar_platos o listar_ultimos_platos primero — nunca adivinar el id. Solo hace falta pasar los campos que cambian.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        id: {
-          type: 'string',
-          description: 'ID exacto del plato a editar, obtenido previamente con buscar_platos o listar_ultimos_platos.',
+        name: 'editar_plato',
+        description:
+                'Edita un plato existente del catálogo por su id exacto. Usar SIEMPRE después de confirmar el id con buscar_platos o listar_ultimos_platos primero — nunca adivinar el id. Solo hace falta pasar los campos que cambian.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          id: {
+                                      type: 'string',
+                                      description: 'ID exacto del plato a editar, obtenido previamente con buscar_platos o listar_ultimos_platos.',
+                          },
+                          nombre: { type: 'string', description: 'Nuevo nombre del plato. Opcional, solo si cambia.' },
+                          categoria: { type: 'string', description: 'Nueva categoría. Opcional, solo si cambia.' },
+                          descripcion: { type: 'string', description: 'Nueva descripción. Opcional, solo si cambia.' },
+                },
+                required: ['id'],
         },
-        nombre: { type: 'string', description: 'Nuevo nombre del plato. Opcional, solo si cambia.' },
-        categoria: { type: 'string', description: 'Nueva categoría. Opcional, solo si cambia.' },
-        descripcion: { type: 'string', description: 'Nueva descripción. Opcional, solo si cambia.' },
-      },
-      required: ['id'],
-    },
   },
   {
-    name: 'eliminar_plato',
-    description:
-      'Elimina un plato del catálogo de forma PERMANENTE por su id exacto. Usar SOLO cuando el chef lo pide explícitamente, y después de confirmar el id con buscar_platos o listar_ultimos_platos. Si hay ambigüedad sobre cuál plato eliminar, mostrar las opciones y pedir confirmación antes de ejecutar.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        id: { type: 'string', description: 'ID exacto del plato a eliminar.' },
-      },
-      required: ['id'],
-    },
+        name: 'eliminar_plato',
+        description:
+                'Elimina un plato del catálogo de forma PERMANENTE por su id exacto. Usar SOLO cuando el chef lo pide explícitamente, y después de confirmar el id con buscar_platos o listar_ultimos_platos. Si hay ambigüedad sobre cuál plato eliminar, mostrar las opciones y pedir confirmación antes de ejecutar.',
+        input_schema: {
+                type: 'object' as const,
+                properties: {
+                          id: { type: 'string', description: 'ID exacto del plato a eliminar.' },
+                },
+                required: ['id'],
+        },
   },
-];
+  ];
 
 const SYSTEM_PROMPT = `Sos un Asistente Gastronómico de IA, el copiloto de cocina del Chef Nahuel para los dos restaurantes de Tandil, Argentina que gestiona Gabriel: "La Vereda" y "Bar Ideal".
 
@@ -245,168 +245,196 @@ Telegram permite un máximo de 4096 caracteres por mensaje, y las respuestas se 
 // Detecta si el mensaje es exactamente una selección de establecimiento (con o sin el emoji del botón).
 // Es determinístico a propósito: no depende de que la IA lo interprete bien.
 function detectarSeleccionEstablecimiento(texto: string): 'la_vereda' | 'bar_ideal' | null {
-  const limpio = texto.toLowerCase();
-  const mencionaVereda = /\bla\s+vereda\b/.test(limpio);
-  const mencionaIdeal = /\bbar\s+ideal\b/.test(limpio);
-  // Si menciona los dos (o ninguno), no se puede resolver de forma determinística: se deja
+    const limpio = texto.toLowerCase();
+    const mencionaVereda = /\bla\s+vereda\b/.test(limpio);
+    const mencionaIdeal = /\bbar\s+ideal\b/.test(limpio);
+    // Si menciona los dos (o ninguno), no se puede resolver de forma determinística: se deja
   // que la conversación siga su curso normal sin forzar un cambio de sesión.
   if (mencionaVereda && !mencionaIdeal) return 'la_vereda';
-  if (mencionaIdeal && !mencionaVereda) return 'bar_ideal';
-  return null;
+    if (mencionaIdeal && !mencionaVereda) return 'bar_ideal';
+    return null;
 }
 
 // Comandos que dependen de saber a qué negocio corresponden antes de poder resolverse.
 const COMANDOS_AMBIGUOS = ['cargar nuevo plato', 'sugerime algo', 'modificar nuevos platos'];
 function esComandoAmbiguo(texto: string): boolean {
-  return COMANDOS_AMBIGUOS.includes(texto.trim().toLowerCase());
+    return COMANDOS_AMBIGUOS.includes(texto.trim().toLowerCase());
 }
 
 function nombreLegible(establecimiento: 'la_vereda' | 'bar_ideal'): string {
-  return establecimiento === 'la_vereda' ? 'La Vereda' : 'Bar Ideal';
+    return establecimiento === 'la_vereda' ? 'La Vereda' : 'Bar Ideal';
 }
 
 export async function procesarMensajeChef(chatId: number, textoUsuario: string): Promise<string> {
-  const seleccion = detectarSeleccionEstablecimiento(textoUsuario);
-  const sesion = await obtenerSesionDb(chatId);
+    const seleccion = detectarSeleccionEstablecimiento(textoUsuario);
+    const sesion = await obtenerSesionDb(chatId);
 
   let establecimientoActual = sesion.establecimiento;
-  let mensajeParaClaude = textoUsuario;
+    let mensajeParaClaude = textoUsuario;
 
   if (seleccion) {
-    establecimientoActual = seleccion;
-    const soloElNombre = /^\s*(la\s+vereda|bar\s+ideal)\s*$/i.test(
-      textoUsuario.replace(/[^\p{L}\s]/gu, '').trim()
-    );
-    if (sesion.pending_accion && soloElNombre) {
-      // El chef solo contestó el nombre del negocio (ej: tocó el botón), sin agregar nada más.
-      // Retomamos el pedido pendiente combinado, sin que tenga que volver a tocar el botón original.
-      mensajeParaClaude = `${sesion.pending_accion} (${nombreLegible(seleccion)})`;
-      await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
-    } else {
-      // El chef mencionó el negocio dentro de un mensaje con más contenido (ej: "es para La Vereda, con pollo"):
-      // usamos su mensaje completo tal cual, sin recortar nada, y limpiamos cualquier pedido pendiente viejo.
-      await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
-    }
+        establecimientoActual = seleccion;
+        const soloElNombre = /^\s*(la\s+vereda|bar\s+ideal)\s*$/i.test(
+                textoUsuario.replace(/[^\p{L}\s]/gu, '').trim()
+              );
+        if (sesion.pending_accion && soloElNombre) {
+                // El chef solo contestó el nombre del negocio (ej: tocó el botón), sin agregar nada más.
+          // Retomamos el pedido pendiente combinado, sin que tenga que volver a tocar el botón original.
+          mensajeParaClaude = `${sesion.pending_accion} (${nombreLegible(seleccion)})`;
+                await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
+        } else {
+                // El chef mencionó el negocio dentro de un mensaje con más contenido (ej: "es para La Vereda, con pollo"):
+          // usamos su mensaje completo tal cual, sin recortar nada, y limpiamos cualquier pedido pendiente viejo.
+          await actualizarSesionDb(chatId, { establecimiento: seleccion, pending_accion: null });
+        }
   } else if (esComandoAmbiguo(textoUsuario) && !establecimientoActual) {
-    // Comando ambiguo sin negocio definido: se resuelve acá mismo, SIN llamar a la IA.
-    // Esto garantiza que la pregunta siempre aparezca, sin depender del criterio del modelo.
-    await actualizarSesionDb(chatId, { pending_accion: textoUsuario });
-    await guardarMensajeDb(chatId, 'user', textoUsuario);
-    const pregunta = '¿Para qué negocio es esto: La Vereda o Bar Ideal?';
-    await guardarMensajeDb(chatId, 'model', pregunta);
-    return pregunta;
+        // Comando ambiguo sin negocio definido: se resuelve acá mismo, SIN llamar a la IA.
+      // Esto garantiza que la pregunta siempre aparezca, sin depender del criterio del modelo.
+      await actualizarSesionDb(chatId, { pending_accion: textoUsuario });
+        await guardarMensajeDb(chatId, 'user', textoUsuario);
+        const pregunta = '¿Para qué negocio es esto: La Vereda o Bar Ideal?';
+        await guardarMensajeDb(chatId, 'model', pregunta);
+        return pregunta;
   }
 
   const historialDb = await obtenerHistorialDb(chatId, HISTORIAL_MENSAJES);
-  await guardarMensajeDb(chatId, 'user', textoUsuario);
+    await guardarMensajeDb(chatId, 'user', textoUsuario);
 
   const systemPromptConContexto = establecimientoActual
-    ? `${SYSTEM_PROMPT}\n\n### Contexto actual de esta conversación (dato confirmado, no una suposición)\nEl establecimiento activo para este chat es: ${nombreLegible(establecimientoActual)}. Si el chef no aclara lo contrario, su pedido es sobre este establecimiento.`
-    : SYSTEM_PROMPT;
+      ? `${SYSTEM_PROMPT}\n\n### Contexto actual de esta conversación (dato confirmado, no una suposición)\nEl establecimiento activo para este chat es: ${nombreLegible(establecimientoActual)}. Si el chef no aclara lo contrario, su pedido es sobre este establecimiento.`
+        : SYSTEM_PROMPT;
 
   const messages: Anthropic.MessageParam[] = [
-    ...historialDb.map((h: { rol: string; contenido: string }) => ({
-      role: h.rol === 'user' ? ('user' as const) : ('assistant' as const),
-      content: h.contenido,
-    })),
+        ...historialDb.map((h: { rol: string; contenido: string }) => ({
+                role: h.rol === 'user' ? ('user' as const) : ('assistant' as const),
+                content: h.contenido,
+        })),
     { role: 'user' as const, content: mensajeParaClaude },
-  ];
+      ];
 
   let response = await client.messages.create({
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    system: systemPromptConContexto,
-    tools,
-    messages,
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: systemPromptConContexto,
+        tools,
+        messages,
   });
 
+  console.log(`[Claude] Primera respuesta: stop_reason=${response.stop_reason}, bloques=${response.content.length}`);
+
   let rondas = 0;
-  while (response.stop_reason === 'tool_use' && rondas < MAX_TOOL_ROUNDS) {
-    rondas++;
-    const toolUseBlocks = response.content.filter(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-    );
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    while (response.stop_reason === 'tool_use' && rondas < MAX_TOOL_ROUNDS) {
+          rondas++;
+          const toolUseBlocks = response.content.filter(
+                  (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+                );
+          const toolResults: Anthropic.ToolResultBlockParam[] = [];
 
-    for (const toolUse of toolUseBlocks) {
-      const { name, id, input } = toolUse;
-      const args = input as Record<string, string>;
-      console.log(`[Claude ToolCall] Ejecutando tool: ${name} con argumentos:`, args);
+      for (const toolUse of toolUseBlocks) {
+              const { name, id, input } = toolUse;
+              const args = input as Record<string, string>;
+              console.log(`[Claude ToolCall] Ronda ${rondas}: tool=${name} args=${JSON.stringify(args)}`);
 
-      let resultData: unknown;
-      try {
-        if (name === 'buscar_platos') {
-          resultData = await buscarPlatosDb(
-            args.establecimiento as 'la_vereda' | 'bar_ideal',
-            args.query,
-            args.categoria
-          );
-        } else if (name === 'obtener_categorias') {
-          resultData = await obtenerCategoriasDb(args.establecimiento as 'la_vereda' | 'bar_ideal');
-        } else if (name === 'agregar_plato') {
-          resultData = await agregarPlatoDb(
-            args.establecimiento as 'la_vereda' | 'bar_ideal',
-            args.nombre,
-            args.categoria,
-            args.descripcion
-          );
-        } else if (name === 'listar_ultimos_platos') {
-          resultData = await obtenerUltimosPlatosDb(
-            args.establecimiento as 'la_vereda' | 'bar_ideal' | undefined,
-            args.limite ? Number(args.limite) : undefined
-          );
-        } else if (name === 'editar_plato') {
-          resultData = await editarPlatoDb(args.id, {
-            nombre: args.nombre,
-            categoria: args.categoria,
-            descripcion: args.descripcion,
-          });
-        } else if (name === 'eliminar_plato') {
-          resultData = await eliminarPlatoDb(args.id);
-        } else {
-          resultData = { error: `Herramienta ${name} no soportada.` };
-        }
-      } catch (err: unknown) {
-        console.error(`Error ejecutando tool ${name}:`, err);
-        resultData = { error: err instanceof Error ? err.message : 'Error interno de base de datos.' };
+            let resultData: unknown;
+              try {
+                        if (name === 'buscar_platos') {
+                                    resultData = await buscarPlatosDb(
+                                                  args.establecimiento as 'la_vereda' | 'bar_ideal',
+                                                  args.query,
+                                                  args.categoria
+                                                );
+                        } else if (name === 'obtener_categorias') {
+                                    resultData = await obtenerCategoriasDb(args.establecimiento as 'la_vereda' | 'bar_ideal');
+                        } else if (name === 'agregar_plato') {
+                                    resultData = await agregarPlatoDb(
+                                                  args.establecimiento as 'la_vereda' | 'bar_ideal',
+                                                  args.nombre,
+                                                  args.categoria,
+                                                  args.descripcion
+                                                );
+                        } else if (name === 'listar_ultimos_platos') {
+                                    resultData = await obtenerUltimosPlatosDb(
+                                                  args.establecimiento as 'la_vereda' | 'bar_ideal' | undefined,
+                                                  args.limite ? Number(args.limite) : undefined
+                                                );
+                        } else if (name === 'editar_plato') {
+                                    resultData = await editarPlatoDb(args.id, {
+                                                  nombre: args.nombre,
+                                                  categoria: args.categoria,
+                                                  descripcion: args.descripcion,
+                                    });
+                        } else if (name === 'eliminar_plato') {
+                                    resultData = await eliminarPlatoDb(args.id);
+                        } else {
+                                    resultData = { error: `Herramienta ${name} no soportada.` };
+                        }
+              } catch (err: unknown) {
+                        console.error(`Error ejecutando tool ${name}:`, err);
+                        resultData = { error: err instanceof Error ? err.message : 'Error interno de base de datos.' };
+              }
+
+            const resultJson = JSON.stringify(resultData);
+              console.log(`[Claude ToolCall] Resultado de ${name}: ${resultJson.length} chars`);
+              toolResults.push({ type: 'tool_result', tool_use_id: id, content: resultJson });
       }
 
-      toolResults.push({ type: 'tool_result', tool_use_id: id, content: JSON.stringify(resultData) });
+      // CRÍTICO: primero agregamos el mensaje del assistant (con sus tool_use blocks),
+      // luego el user message con los tool_results. La API de Anthropic exige que cada
+      // bloque tool_use tenga su tool_result correspondiente en el mensaje user siguiente.
+      messages.push({ role: 'assistant' as const, content: response.content });
+          messages.push({ role: 'user' as const, content: toolResults });
+
+      response = await client.messages.create({
+              model: MODEL,
+              max_tokens: MAX_TOKENS,
+              system: systemPromptConContexto,
+              tools,
+              messages,
+      });
+
+      console.log(`[Claude] Ronda ${rondas}: stop_reason=${response.stop_reason}, bloques=${response.content.length}`);
     }
 
-    messages.push({ role: 'assistant' as const, content: response.content });
-    messages.push({ role: 'user' as const, content: toolResults });
-
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: systemPromptConContexto,
-      tools,
-      messages,
-    });
-  }
-
-  // Salida de emergencia: si se agotaron las vueltas de tool calling y todavía no hay
-  // texto final (caso raro), forzamos una última respuesta SIN herramientas, usando SOLO
-  // las rondas ya completadas (con sus resultados resueltos) — nunca la consulta a medio
-  // resolver, porque la API rechaza una consulta sin su resultado correspondiente.
+  // Salida de emergencia: si se agotaron las vueltas de tool calling sin llegar a texto final,
+  // forzamos una última respuesta SIN herramientas.
+  // CRÍTICO: si la última respuesta tiene tool_use blocks sin resolver, hay que añadir el
+  // assistant message Y sus tool_results (vacíos pero válidos) antes de pedir texto final,
+  // para no violar el invariante de la API que exige tool_result por cada tool_use.
   if (response.stop_reason === 'tool_use') {
-    console.warn('[Claude] Se agotó MAX_TOOL_ROUNDS sin respuesta de texto. Forzando respuesta final.');
-    messages.push({
-      role: 'user' as const,
-      content: 'Con lo que ya averiguaste hasta ahora, dame la mejor respuesta posible en texto — no consultes nada más.',
-    });
-    response = await client.messages.create({
-      model: MODEL,
-      max_tokens: MAX_TOKENS,
-      system: systemPromptConContexto,
-      messages,
-    });
+        console.warn(`[Claude] Se agotó MAX_TOOL_ROUNDS (${MAX_TOOL_ROUNDS}) sin respuesta de texto. Forzando respuesta final.`);
+
+      const pendingToolUseBlocks = response.content.filter(
+              (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+            );
+
+      // Agregar el último mensaje del assistant con sus tool_use blocks sin resolver
+      messages.push({ role: 'assistant' as const, content: response.content });
+
+      // Agregar tool_results vacíos (con aviso) para cada tool_use pendiente
+      const emptyToolResults: Anthropic.ToolResultBlockParam[] = pendingToolUseBlocks.map((toolUse) => ({
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: JSON.stringify({ nota: 'Límite de consultas alcanzado. Respondé con lo que ya tenés.' }),
+      }));
+        messages.push({ role: 'user' as const, content: emptyToolResults });
+
+      // Pedir respuesta final en texto, sin herramientas
+      response = await client.messages.create({
+              model: MODEL,
+              max_tokens: MAX_TOKENS,
+              system: systemPromptConContexto,
+              tools: [],
+              messages,
+      });
+
+      console.log(`[Claude] Respuesta forzada final: stop_reason=${response.stop_reason}, bloques=${response.content.length}`);
   }
 
   const textBlock = response.content.find((block): block is Anthropic.TextBlock => block.type === 'text');
-  const respuestaFinal = textBlock?.text || 'No pude procesar una respuesta. Probá reformular la consulta.';
+    const respuestaFinal = textBlock?.text || 'No pude procesar una respuesta. Probá reformular la consulta.';
+
+  console.log(`[Claude] Respuesta final: ${respuestaFinal.length} chars, rondas usadas: ${rondas}`);
 
   await guardarMensajeDb(chatId, 'model', respuestaFinal);
-  return respuestaFinal;
+    return respuestaFinal;
 }
