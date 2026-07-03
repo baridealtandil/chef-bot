@@ -8,7 +8,7 @@ if (!anthropicApiKey) {
 const client = new Anthropic({ apiKey: anthropicApiKey });
 
 const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
-const MAX_TOKENS = 4096;
+const MAX_TOKENS = 8096;
 const MAX_TOOL_ROUNDS = 20; // límite de seguridad para evitar loops infinitos de tool calling
 const HISTORIAL_MENSAJES = 20;
 
