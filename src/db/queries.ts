@@ -29,6 +29,25 @@ export interface Mensaje {
   contenido: string;
   created_at: Date;
 }
+export interface SesionChat {
+  chat_id: number;
+  establecimiento: 'la_vereda' | 'bar_ideal' | null;
+  pending_accion: string | null;
+}
+// Crea la tabla de sesiones si todavía no existe. Se llama una vez al arrancar el servidor,
+// así no hace falta correr ningún SQL a mano en Railway.
+export async function inicializarBaseDeDatos(): Promise<void> {
+  const db = getSql();
+  await db`
+    CREATE TABLE IF NOT EXISTS sesiones_chat (
+      chat_id BIGINT PRIMARY KEY,
+      establecimiento VARCHAR(20),
+      pending_accion TEXT,
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+  console.log('[DB] Tabla sesiones_chat verificada/creada correctamente.');
+}
 export async function buscarPlatosDb(
   establecimiento: 'la_vereda' | 'bar_ideal',
   query?: string,
@@ -167,5 +186,33 @@ export async function obtenerHistorialDb(chatId: number, limit = 20): Promise<Me
     WHERE chat_id = ${chatId}
     ORDER BY created_at ASC
     LIMIT ${limit}
+  `;
+}
+// Obtiene el estado de sesión (negocio activo y acción pendiente) para un chat.
+// Devuelve valores en null si el chat todavía no tiene sesión registrada.
+export async function obtenerSesionDb(chatId: number): Promise<SesionChat> {
+  const db = getSql();
+  const rows = await db<SesionChat[]>`
+    SELECT chat_id, establecimiento, pending_accion
+    FROM sesiones_chat
+    WHERE chat_id = ${chatId}
+  `;
+  return rows[0] ?? { chat_id: chatId, establecimiento: null, pending_accion: null };
+}
+// Actualiza parcialmente la sesión de un chat (solo los campos que se pasan; el resto queda igual)
+export async function actualizarSesionDb(
+  chatId: number,
+  cambios: { establecimiento?: 'la_vereda' | 'bar_ideal' | null; pending_accion?: string | null }
+): Promise<void> {
+  const db = getSql();
+  const actual = await obtenerSesionDb(chatId);
+  const establecimiento = cambios.establecimiento !== undefined ? cambios.establecimiento : actual.establecimiento;
+  const pendingAccion = cambios.pending_accion !== undefined ? cambios.pending_accion : actual.pending_accion;
+
+  await db`
+    INSERT INTO sesiones_chat (chat_id, establecimiento, pending_accion, updated_at)
+    VALUES (${chatId}, ${establecimiento}, ${pendingAccion}, NOW())
+    ON CONFLICT (chat_id)
+    DO UPDATE SET establecimiento = ${establecimiento}, pending_accion = ${pendingAccion}, updated_at = NOW()
   `;
 }
