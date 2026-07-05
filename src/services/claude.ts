@@ -7,10 +7,10 @@ if (!anthropicApiKey) {
 }
 const client = new Anthropic({ apiKey: anthropicApiKey });
 
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-haiku-4-5-20251001'; // Cambiado a Haiku 4.5 para economizar costos drásticamente en 2026
 const MAX_TOKENS = 4096;
 const MAX_TOOL_ROUNDS = 20; // límite de seguridad para evitar loops infinitos de tool calling
-const HISTORIAL_MENSAJES = 20;
+const HISTORIAL_MENSAJES = 6; // Optimizado a 6 mensajes para ahorrar tokens de historial
 
 const tools: Anthropic.Tool[] = [
   {
@@ -328,7 +328,13 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
   let response = await client.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
-    system: systemPromptConContexto,
+    system: [
+      {
+        type: 'text',
+        text: systemPromptConContexto,
+        cache_control: { type: 'ephemeral' } // Caching del prompt del sistema para reducir 90% el costo de tokens de entrada
+      }
+    ] as any,
     tools,
     messages,
   });
@@ -393,7 +399,13 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
     response = await client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: systemPromptConContexto,
+      system: [
+        {
+          type: 'text',
+          text: systemPromptConContexto,
+          cache_control: { type: 'ephemeral' }
+        }
+      ] as any,
       tools,
       messages,
     });
@@ -412,7 +424,13 @@ export async function procesarMensajeChef(chatId: number, textoUsuario: string):
     response = await client.messages.create({
       model: MODEL,
       max_tokens: MAX_TOKENS,
-      system: systemPromptConContexto,
+      system: [
+        {
+          type: 'text',
+          text: systemPromptConContexto,
+          cache_control: { type: 'ephemeral' }
+        }
+      ] as any,
       messages,
     });
   }
